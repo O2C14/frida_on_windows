@@ -1,6 +1,5 @@
 import time
 import frida
-import sys
 import os
 import psutil
 
@@ -14,15 +13,16 @@ def attach_and_load_script(pid):
     js_code = js_file.read()
     js_file.close()
     script = session.create_script(js_code)
-    script.load()
     scripterror=False
     try:
+        script.load()
         script.exports_sync.init(processname)
     except Exception as e:
-        print(f"发生了异常：{str(e)}")
-    finally:
+        print(f"脚本错误：{str(e)}")
+        script.unload()
         session.detach()
         scripterror=True
+    #finally:
     return session, script,scripterror
 
 def main():
@@ -49,7 +49,6 @@ def main():
                     script.unload()
                     session.detach()
                 session, script,scripterror = attach_and_load_script(pid)
-                print("重载脚本成功")
     except KeyboardInterrupt:
         pass
     finally:
