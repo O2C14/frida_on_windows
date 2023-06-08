@@ -4,73 +4,81 @@ import frida
 import os
 import psutil
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QPushButton
+from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton,QWidget,QVBoxLayout, QLabel
 import json
-"""
-processname = "MinecraftLegends.Windows.exe"
-processpath = r"D:\Download\Minecraft Legends\MinecraftLegends.Windows.exe"
-scriptpath = "D:\Download\yqqs\legends.js"
-"""
 processname = "reverse_engineers_test.exe"
 processpath = r"C:\Users\O2C14\source\repos\reverse_engineers_test\x64\Debug\reverse_engineers_test.exe"
 scriptpath = "D:\Download\yqqs\legends.js"
-class MyWidget(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.buttons = []
-        
-    def load_ui(self,myQWidgetjson):
-        # 读取JSON文件
-        data = json.loads(myQWidgetjson)
-
-        # 创建控件
-        for button_data in data['buttons']:
-            button = QPushButton(button_data['text'], self)
-            button.move(button_data['x'], button_data['y'])
-            button.resize(button_data['width'], button_data['height'])
-            self.buttons.append(button)
+QWidgetjsonpath="D:\Download\yqqs\QWidgetjson.json"
+class JsonWatcher(QThread):
+    data_changed = pyqtSignal()
+    def __init__(self, file_path, parent=None):
+        super().__init__(parent)
+        self.file_path = file_path
+        self.last_data = None
+        self.last_modified_time = os.path.getmtime(QWidgetjsonpath)
+    def run(self):
+        while True:
+            time.sleep(2)
+            self.modified_time = os.path.getmtime(QWidgetjsonpath)
+            if self.modified_time != self.last_modified_time:
+                self.data_changed.emit()
             
-        # 显示窗口
-        self.show()
-
-    def reload_ui(self,myQWidgetjson):
-        # 清空旧的控件列表
-        for button in self.buttons:
-            button.deleteLater()
-        self.buttons = []
-        # 重新读取JSON文件并创建新的控件列表
-        data = json.loads(myQWidgetjson)
-
-        for button_data in data['buttons']:
-            button = QPushButton(button_data['text'], self)
-            button.move(button_data['x'], button_data['y'])
-            button.resize(button_data['width'], button_data['height'])
-            self.buttons.append(button)
-
-        # 重新绘制窗口
-        self.update()
 def on_message(message, data):
-    if message["type"] == "send":
-        print("{}".format(message["payload"]))
+    if message['type'] == 'send':
+        print(message['payload'])
+    elif message['type'] == 'error':
+        print(message['stack'])
+class MyWindow(QWidget):
+    def __init__(self, file_path, parent=None):
+        super().__init__(parent)
+        self.file_path = file_path
+        self.layout = QVBoxLayout(self)
+        self.setLayout(self.layout)
 
+        # 从 JSON 文件中读取数据
+        with open(file_path, 'r',encoding='utf-8') as f:
+            data = json.load(f)
 
+        # 逐个创建控件并添加到布局
+        for item in data['items']:
+            label = QLabel(item['text'])
+            self.layout.addWidget(label)
+
+        # 创建 JsonWatcher 对象并启动线程
+        self.watcher = JsonWatcher(file_path)
+        self.watcher.data_changed.connect(self.on_data_changed)
+        self.watcher.start()
+
+    def on_data_changed(self):
+        # 更新窗口内容
+        for i in range(self.layout.count()):
+            self.layout.itemAt(i).widget().deleteLater()
+        with open(self.file_path, 'r',encoding='utf-8') as f:
+            data = json.load(f)
+        for item in data['items']:
+            label = QLabel(item['text'])
+            self.layout.addWidget(label)
 class myapplication:
     pid = 0
     QWidgetjson=''
     def __init__(self):
-        while self.pid == 0:
+        if self.checkprocess()==0:
             os.startfile(processpath)
-            pids = psutil.process_iter()
-            for apid in pids:
-                if apid.name() == processname and apid.status() != "stopped":
-                    self.pid = apid.pid
+        while self.checkprocess()==0:pass
         print("进程PID:", self.pid)
-
         self.session, self.script,self.scripterror = self.attach_and_load_script()
-
         self.last_modified_time = os.path.getmtime(scriptpath)
+    def checkprocess(self):
+        pids = psutil.process_iter()
+        for apid in pids:
+            if apid.name() == processname and apid.status() != "stopped":
+                self.pid = apid.pid
+                return apid.pid
+        return 0
 
-    def scriptreload(self):
+    def scriptreload(self,):
         try:
             while True:
                 time.sleep(2)
@@ -86,6 +94,7 @@ class myapplication:
         finally:
             self.session.detach()
     def attach_and_load_script(self):
+        #print(self.pid)
         session = frida.attach(self.pid)
         js_file = open(scriptpath, encoding='utf-8')
         js_code = js_file.read()
@@ -101,30 +110,16 @@ class myapplication:
             script.unload()
             session.detach()
             scripterror=True
-        #finally:
+        finally:
+            pass
         return session, script,scripterror
-
 def main():
     mainapplication = myapplication()
-    app = QApplication(sys.argv)
-    widget = MyWidget()
-    # 在单独的线程中启动脚本重载函数
     script_reload_thread = threading.Thread(target=mainapplication.scriptreload, daemon=True)
     script_reload_thread.start()
-    while mainapplication.QWidgetjson=='':
-        time.sleep(1)
-    widget.load_ui(mainapplication.QWidgetjson)
-    widget.setGeometry(100, 100, 300, 200)
-
-    # 开始事件循环
-    while True:
-        app.processEvents()
-        widget.reload_ui(mainapplication.QWidgetjson)
-        time.sleep(0.1)
-        if not widget.isVisible():
-            break
-
-    # 程序退出
-    sys.exit()
+    app = QApplication(sys.argv)
+    window = MyWindow(QWidgetjsonpath)
+    window.show()
+    sys.exit(app.exec_())
 if __name__ == "__main__":
     main()
