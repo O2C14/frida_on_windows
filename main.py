@@ -1,17 +1,11 @@
-import threading
 import time
 import frida
 import os
 import psutil
 import sys
 from PyQt5.QtCore import QThread, pyqtSignal
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton,QWidget,QVBoxLayout, QLabel
+from PyQt5.QtWidgets import QApplication,QPushButton,QWidget,QVBoxLayout, QLabel,QComboBox
 import json
-"""
-processname = "MinecraftLegends.Windows.exe"
-processpath = r"D:\Download\Minecraft Legends\MinecraftLegends.Windows.exe"
-scriptpath = "D:\Download\yqqs\legends.js"
-"""
 processname = "reverse_engineers_test.exe"
 processpath = r"C:\Users\O2C14\source\repos\reverse_engineers_test\x64\Debug\reverse_engineers_test.exe"
 scriptpath = "D:\Download\yqqs\legends.js"
@@ -41,45 +35,12 @@ class MyWindow(QWidget):
         self.file_path = file_path
         self.layout = QVBoxLayout(self)
         self.setLayout(self.layout)
-        self._load_json()
-
-        # 创建文件监视器并启动线程
-        self.watcher = FlieWatcher(file_path)
-        self.watcher.data_changed.connect(self.on_data_changed)
-        self.watcher.start()
-
-    def on_data_changed(self):
-        self._update_window()
-
-    def _load_json(self):
-        with open(self.file_path, 'r', encoding='utf-8') as f:
-            self.data = json.load(f)
-
-    def _update_window(self):
-        # 清空布局中的控件
-        for i in reversed(range(self.layout.count())):
-            widget = self.layout.itemAt(i).widget()
-            widget.setParent(None)
-
-        # 重新添加控件
-        self._load_json()
-        for item in self.data['items']:
-            label = QLabel(item['text'])
-            self.layout.addWidget(label)
-    def __init__(self, file_path, parent=None):
-        super().__init__(parent)
-        self.file_path = file_path
-        self.layout = QVBoxLayout(self)
-        self.setLayout(self.layout)
 
         # 从 JSON 文件中读取数据
         with open(file_path, 'r',encoding='utf-8') as f:
-            data = json.load(f)
+            self.data = json.load(f)
 
-        # 逐个创建控件并添加到布局
-        for item in data['items']:
-            label = QLabel(item['text'])
-            self.layout.addWidget(label)
+        self.changewidget()
 
         # 创建 JsonWatcher 对象并启动线程
         self.watcher = FlieWatcher(file_path)
@@ -91,10 +52,39 @@ class MyWindow(QWidget):
         for i in range(self.layout.count()):
             self.layout.itemAt(i).widget().deleteLater()
         with open(self.file_path, 'r',encoding='utf-8') as f:
-            data = json.load(f)
-        for item in data['items']:
-            label = QLabel(item['text'])
-            self.layout.addWidget(label)
+            self.data = json.load(f)
+        self.changewidget()
+    def setwidgetAttribute(self,widget,item):
+        if not ('x' in item):
+            item['x']=50
+        if not ('y' in item):
+            item['y']=50
+        if not ('width' in item):
+            item['width']=100
+        if not ('height' in item):
+            item['height']=30
+        widget.move(item['x'],item['y'])
+        widget.resize(item['width'],item['height'])
+    def changewidget(self):
+        # 逐个创建控件并添加到布局
+        for key in self.data:
+            if key=='Label':
+                for subwidget in self.data['Label']:
+                    label=QLabel(subwidget['text'])
+                    self.setwidgetAttribute(label,subwidget)
+                    self.layout.addWidget(label)
+            if key=='Buttons':
+                for subwidget in self.data['Buttons']:
+                    button=QPushButton(subwidget['text'])
+                    self.setwidgetAttribute(button,subwidget)
+                    self.layout.addWidget(button)
+            if key=='ComboBox':
+                for subwidget in self.data['ComboBox']:
+                    ComboBox=QComboBox()
+                    self.setwidgetAttribute(ComboBox,subwidget)
+                    for item in subwidget['item']:
+                        ComboBox.addItem(item)
+                    self.layout.addWidget(ComboBox)
 class myapplication:
     pid = 0
     QWidgetjson=''
