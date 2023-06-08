@@ -7,30 +7,65 @@ import sys
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton,QWidget,QVBoxLayout, QLabel
 import json
+"""
+processname = "MinecraftLegends.Windows.exe"
+processpath = r"D:\Download\Minecraft Legends\MinecraftLegends.Windows.exe"
+scriptpath = "D:\Download\yqqs\legends.js"
+"""
 processname = "reverse_engineers_test.exe"
 processpath = r"C:\Users\O2C14\source\repos\reverse_engineers_test\x64\Debug\reverse_engineers_test.exe"
 scriptpath = "D:\Download\yqqs\legends.js"
 QWidgetjsonpath="D:\Download\yqqs\QWidgetjson.json"
-class JsonWatcher(QThread):
+class FlieWatcher(QThread):
     data_changed = pyqtSignal()
     def __init__(self, file_path, parent=None):
         super().__init__(parent)
         self.file_path = file_path
         self.last_data = None
-        self.last_modified_time = os.path.getmtime(QWidgetjsonpath)
+        self.last_modified_time = os.path.getmtime(self.file_path)
     def run(self):
         while True:
             time.sleep(2)
-            self.modified_time = os.path.getmtime(QWidgetjsonpath)
-            if self.modified_time != self.last_modified_time:
+            modified_time = os.path.getmtime(self.file_path)
+            if modified_time != self.last_modified_time:
+                self.last_modified_time=modified_time
                 self.data_changed.emit()
-            
 def on_message(message, data):
     if message['type'] == 'send':
         print(message['payload'])
     elif message['type'] == 'error':
         print(message['stack'])
 class MyWindow(QWidget):
+    def __init__(self, file_path, parent=None):
+        super().__init__(parent)
+        self.file_path = file_path
+        self.layout = QVBoxLayout(self)
+        self.setLayout(self.layout)
+        self._load_json()
+
+        # 创建文件监视器并启动线程
+        self.watcher = FlieWatcher(file_path)
+        self.watcher.data_changed.connect(self.on_data_changed)
+        self.watcher.start()
+
+    def on_data_changed(self):
+        self._update_window()
+
+    def _load_json(self):
+        with open(self.file_path, 'r', encoding='utf-8') as f:
+            self.data = json.load(f)
+
+    def _update_window(self):
+        # 清空布局中的控件
+        for i in reversed(range(self.layout.count())):
+            widget = self.layout.itemAt(i).widget()
+            widget.setParent(None)
+
+        # 重新添加控件
+        self._load_json()
+        for item in self.data['items']:
+            label = QLabel(item['text'])
+            self.layout.addWidget(label)
     def __init__(self, file_path, parent=None):
         super().__init__(parent)
         self.file_path = file_path
@@ -47,7 +82,7 @@ class MyWindow(QWidget):
             self.layout.addWidget(label)
 
         # 创建 JsonWatcher 对象并启动线程
-        self.watcher = JsonWatcher(file_path)
+        self.watcher = FlieWatcher(file_path)
         self.watcher.data_changed.connect(self.on_data_changed)
         self.watcher.start()
 
@@ -70,6 +105,9 @@ class myapplication:
         print("进程PID:", self.pid)
         self.session, self.script,self.scripterror = self.attach_and_load_script()
         self.last_modified_time = os.path.getmtime(scriptpath)
+        self.watcher = FlieWatcher(scriptpath)
+        self.watcher.data_changed.connect(self.scriptreload)
+        self.watcher.start()
     def checkprocess(self):
         pids = psutil.process_iter()
         for apid in pids:
@@ -79,20 +117,10 @@ class myapplication:
         return 0
 
     def scriptreload(self,):
-        try:
-            while True:
-                time.sleep(2)
-                self.modified_time = os.path.getmtime(scriptpath)
-                if self.modified_time != self.last_modified_time:
-                    self.last_modified_time = self.modified_time
-                    if not self.scripterror:
-                        self.script.unload()
-                        self.session.detach()
-                    self.session, self.script,self.scripterror = self.attach_and_load_script()
-        except KeyboardInterrupt:
-            pass
-        finally:
+        if not self.scripterror:
+            self.script.unload()
             self.session.detach()
+        self.session, self.script,self.scripterror = self.attach_and_load_script()
     def attach_and_load_script(self):
         #print(self.pid)
         session = frida.attach(self.pid)
@@ -114,12 +142,19 @@ class myapplication:
             pass
         return session, script,scripterror
 def main():
-    mainapplication = myapplication()
-    script_reload_thread = threading.Thread(target=mainapplication.scriptreload, daemon=True)
-    script_reload_thread.start()
+    myapp = myapplication()
     app = QApplication(sys.argv)
     window = MyWindow(QWidgetjsonpath)
     window.show()
-    sys.exit(app.exec_())
+    window.resize(400,300)
+    try:
+        ret_code = app.exec_()
+    except KeyboardInterrupt:
+        myapp.session.detach()
+        sys.exit()
+    else:
+        if ret_code == 0:
+            # 退出事件循环时断开 Frida session
+            myapp.session.detach()
 if __name__ == "__main__":
     main()
