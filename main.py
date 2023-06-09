@@ -1,27 +1,27 @@
-import time
-import frida
-import os
-import psutil
-import sys
-from PyQt5.QtCore import QThread, pyqtSignal,Qt
-from PyQt5.QtGui import QFont
-from PyQt5.QtWidgets import QApplication,QPushButton,QWidget,QVBoxLayout, QLabel,QComboBox,QSlider,QGridLayout,QSpacerItem,QListWidget,QScrollBar,QListWidgetItem
-import json
+import time,frida,os,psutil,sys,json
+from changewidgets import changewidget
+from PyQt5.QtCore import QThread, pyqtSignal,QObject
+from PyQt5.QtWidgets import QApplication,QWidget,QVBoxLayout
+
 processname = "reverse_engineers_test.exe"
 processpath = r"C:\Users\O2C14\source\repos\reverse_engineers_test\x64\Debug\reverse_engineers_test.exe"
 scriptpath = "D:\Download\yqqs\legends.js"
 QWidgetjsonpath="D:\Download\yqqs\QWidgetjson.json"
-jsWidget={}
+
 def on_message(message, data):
-    global jsWidget
     if message['type'] == 'send':#消息分类
         tmpdic=message['payload']
         if "widget" in tmpdic:
-            jsWidget = tmpdic
+            trans.message_changed.emit(tmpdic)
         elif "message" in tmpdic:
             print(message['payload'])
     elif message['type'] == 'error':
         print(message['stack'])
+
+class transimtmessage(QObject):
+    message_changed = pyqtSignal(dict)
+global trans
+trans =transimtmessage()
 class FlieWatcher(QThread):
     data_changed = pyqtSignal()
     def __init__(self, file_path,delay, parent=None):
@@ -37,26 +37,27 @@ class FlieWatcher(QThread):
             if modified_time != self.last_modified_time:
                 self.last_modified_time=modified_time
                 self.data_changed.emit()
-
 class MyWindow(QWidget):
-    def __init__(self, file_path, parent=None):
+    def __init__(self, file_path,script, parent=None):
         super().__init__(parent)
         self.file_path = file_path
         self.layout = QVBoxLayout(self)
         self.setLayout(self.layout)
-
+        self.script=script
         # 从 JSON 文件中读取数据
         with open(file_path, 'r',encoding='utf-8') as f:
             self.data = json.load(f)
             self.data=self.data['main']
-
-        self.changewidget()
-
+        changewidget(self)
         # 检测布局改动
         self.watcher = FlieWatcher(file_path,2)
         self.watcher.data_changed.connect(self.on_data_changed)
         self.watcher.start()
-
+        trans.message_changed.connect(self.on_send_message)
+    def on_send_message(self,jsWidget):
+        #传递js中的Widget
+        jsWidget=json.loads(jsWidget['widget'])
+        print(jsWidget)
     def on_data_changed(self):
         # 更新窗口内容
         for i in range(self.layout.count()):
@@ -64,60 +65,7 @@ class MyWindow(QWidget):
         with open(self.file_path, 'r',encoding='utf-8') as f:
             self.data = json.load(f)
             self.data=self.data['main']
-        self.changewidget()
-    def setwidgetAttribute(self,widget,item):
-        if not ('x' in item):
-            item['x']=50
-        if not ('y' in item):
-            item['y']=50
-        if not ('width' in item):
-            item['width']=100
-        if not ('height' in item):
-            item['height']=30
-        widget.move(item['x'],item['y'])
-        widget.resize(item['width'],item['height'])
-    def changewidget(self):
-        # 逐个创建控件并添加到布局
-        font = QFont()
-        font.setFamily("Consolas")
-        font.setPointSize(15)
-        print('正在刷新窗口')
-        for key in self.data:
-            if key['type']=='Label':
-                label=QLabel(key['text'])
-                label.setFont(font)
-                self.setwidgetAttribute(label,key)
-                self.layout.addWidget(label)
-            if key['type']=='Buttons':
-                button=QPushButton(key['text'])
-                button.setFont(font)
-                self.setwidgetAttribute(button,key)
-                self.layout.addWidget(button)
-            if key['type']=='ComboBox':
-                combobox=QComboBox()
-                combobox.setFont(font)
-                self.setwidgetAttribute(combobox,key)
-                for item in key['item']:
-                    combobox.addItem(item)
-                self.layout.addWidget(combobox)
-            if key['type']=='Slider':
-                Slider=QSlider()
-                Slider.setFont(font)
-                self.setwidgetAttribute(Slider,key)
-                Slider.setMinimum(key['minimum'])
-                Slider.setMaximum(key['maximum'])
-                Slider.setSingleStep(key['singleStep'])
-                Slider.setPageStep(key['pageStep'])
-                if(key['orientation']=="Horizontal"):
-                    Slider.setOrientation(Qt.Horizontal)
-                else:
-                    Slider.setOrientation(Qt.Vertical)
-                self.layout.addWidget(Slider)
-            if key['type']=='ListWidget':
-                List=QListWidget()
-                List.setVerticalScrollBar(QScrollBar(List))
-                List.addItems(key['item'])
-                self.layout.addWidget(List)
+        changewidget(self)
 class myapplication:
     pid = 0
     QWidgetjson=''
@@ -145,7 +93,7 @@ class myapplication:
             self.session.detach()
         self.session, self.script,self.scripterror = self.attach_and_load_script()
     def attach_and_load_script(self):
-        print(self.pid)
+        #print(self.pid)
         session = frida.attach(self.pid)
         js_file = open(scriptpath, encoding='utf-8')
         js_code = js_file.read()
@@ -155,7 +103,7 @@ class myapplication:
         try:
             script.load()
             script.exports_sync.start(processname)
-            script.on('message', on_message)
+            script.on('message',on_message)
         except Exception as e:
             print(f"脚本错误：{str(e)}")
             script.unload()
@@ -165,9 +113,10 @@ class myapplication:
             pass
         return session, script,scripterror
 def main():
-    myapp = myapplication()
+    global myapp
+    myapp=myapplication()
     app = QApplication(sys.argv)
-    window = MyWindow(QWidgetjsonpath)
+    window = MyWindow(QWidgetjsonpath,myapp.script)
     window.show()
     window.resize(400,300)
     try:
