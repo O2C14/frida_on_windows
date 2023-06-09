@@ -1,0 +1,42 @@
+{
+    "main": [
+        {
+            "type": "Label",
+            "text": "MOD菜单",
+            "x": 50,
+            "y": 100,
+            "width": 100,
+            "height": 30
+        },
+        {
+            "type": "Buttons",
+            "text": "一个按钮",
+            "x": 50,
+            "y": 100,
+            "width": 100,
+            "height": 30
+        },
+        {
+            "type": "ComboBox",
+            "item": [
+                "1",
+                "2"
+            ]
+        },
+        {
+            "type": "Slider",
+            "minimum": 0,
+            "maximum": 99,
+            "singleStep": 1,
+            "pageStep": 10,
+            "orientation": "Horizontal"
+        },
+        {
+            "type": "ListWidget", 
+            "item":[
+                "1","2","3"
+            ]
+        }
+    ],
+    "modmenu": []
+}
