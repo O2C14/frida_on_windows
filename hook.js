@@ -20,27 +20,7 @@ function main() {
         }
     };
 }
-var QWidget = {
-    "modmenu": [
-        {
-            "type": "Label",
-            "text": "JS菜单",
-            "x": 50,
-            "y": 100,
-            "width": 100,
-            "height": 30
-        },
-        {
-            "type": "Buttons",
-            "text": "js按钮",
-            "x": 50,
-            "y": 100,
-            "width": 100,
-            "height": 30
-        }
-    ]
-
-}
+/*
 function sendwidget() {
     send({
         'widget': JSON.stringify(QWidget)
@@ -50,5 +30,5 @@ function sendmessage(message) {
     send({
         'message': message
     });
-}
+}*/
 main();
