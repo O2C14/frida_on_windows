@@ -1,27 +1,30 @@
-import time,frida,os,psutil,sys,json
-from changewidgets import changewidget
+import time,frida,os,psutil,sys,json,pickle
+from changewidgets import changewidget,updatalist
 from PyQt5.QtCore import QThread, pyqtSignal,QObject
 from PyQt5.QtWidgets import QApplication,QWidget,QVBoxLayout
 
-processname = "reverse_engineers_test.exe"
-processpath = r"C:\Users\O2C14\source\repos\reverse_engineers_test\x64\Debug\reverse_engineers_test.exe"
-scriptpath = "D:\Download\yqqs\legends.js"
-QWidgetjsonpath="D:\Download\yqqs\QWidgetjson.json"
+processname=
+processpath=
+scriptpath = 
+QWidgetjsonpath=
 
-def on_message(message, data):
+def on_message(message, data):#因为on_message只能是全局函数(写进类就会引入self这个参数然后报错)
     if message['type'] == 'send':#消息分类
         tmpdic=message['payload']
-        if "widget" in tmpdic:
-            trans.message_changed.emit(tmpdic)
+        if "callfunc" in tmpdic: 
+            转发消息.message_changed.emit(tmpdic)
         elif "message" in tmpdic:
             print(message['payload'])
     elif message['type'] == 'error':
         print(message['stack'])
 
-class transimtmessage(QObject):
+
+class mySignal(QObject):
     message_changed = pyqtSignal(dict)
-global trans
-trans =transimtmessage()
+    reloadscript = pyqtSignal(bytes)
+global 转发消息
+转发消息 =mySignal()#转发消息
+
 class FlieWatcher(QThread):
     data_changed = pyqtSignal()
     def __init__(self, file_path,delay, parent=None):
@@ -37,48 +40,67 @@ class FlieWatcher(QThread):
             if modified_time != self.last_modified_time:
                 self.last_modified_time=modified_time
                 self.data_changed.emit()
+
+
 class MyWindow(QWidget):
-    def __init__(self, file_path,script, parent=None):
+    def __init__(self, file_path,app, parent=None):
         super().__init__(parent)
         self.file_path = file_path
         self.layout = QVBoxLayout(self)
         self.setLayout(self.layout)
-        self.script=script
         # 从 JSON 文件中读取数据
         with open(file_path, 'r',encoding='utf-8') as f:
             self.data = json.load(f)
             self.data=self.data['main']
+        self.myapp=app    
         changewidget(self)
+        
         # 检测布局改动
         self.watcher = FlieWatcher(file_path,2)
         self.watcher.data_changed.connect(self.on_data_changed)
         self.watcher.start()
-        trans.message_changed.connect(self.on_send_message)
-    def on_send_message(self,jsWidget):
-        #传递js中的Widget
-        jsWidget=json.loads(jsWidget['widget'])
-        print(jsWidget)
+        
+        转发消息.message_changed.connect(self.receive_message)
+        转发消息.reloadscript.connect(self.onreloadscript)
+    def onreloadscript(self,app):
+        self.myapp=pickle.loads(app)
+        #self.on_data_changed()
+    def receive_message(self,message):
+        return
+        print(message)
     def on_data_changed(self):
         # 更新窗口内容
-        for i in range(self.layout.count()):
+        for i in range(self.layout.count()):#清除原有布局
             self.layout.itemAt(i).widget().deleteLater()
         with open(self.file_path, 'r',encoding='utf-8') as f:
             self.data = json.load(f)
             self.data=self.data['main']
         changewidget(self)
+
 class myapplication:
     pid = 0
     QWidgetjson=''
+    spawnmode=True
     def __init__(self):
         if self.checkprocess()==0:
-            os.startfile(processpath)
-        while self.checkprocess()==0:pass
+            if self.spawnmode==True:
+                self.pid = frida.spawn(processpath)
+            else:
+                os.startfile(processpath)
+                while self.checkprocess()==0:pass
+        else:
+            self.spawnmode=False
         print("进程PID:", self.pid)
-        self.session, self.script,self.scripterror = self.attach_and_load_script()
-        self.last_modified_time = os.path.getmtime(scriptpath)
+        self.attach_and_load_script()
         self.watcher = FlieWatcher(scriptpath,2)
         self.watcher.data_changed.connect(self.scriptreload)
         self.watcher.start()
+        转发消息.message_changed.connect(self.receive_message)
+    def receive_message(self,message):
+        #return
+        if(message['callfunc']=='updatalist'):
+            updatalist(message['arg'],self)
+            print(message)
     def checkprocess(self):
         pids = psutil.process_iter()
         for apid in pids:
@@ -86,39 +108,43 @@ class myapplication:
                 self.pid = apid.pid
                 return apid.pid
         return 0
-
-    def scriptreload(self,):
-        if not self.scripterror:
-            self.script.unload()
-            self.session.detach()
-        self.session, self.script,self.scripterror = self.attach_and_load_script()
+    def scriptreload(self):
+        if not self.spawnmode:
+            if not self.session.is_detached:
+                self.script.exports_sync.unloadscript()
+                self.script.unload()
+                self.session.detach()
+            self.attach_and_load_script()
+        
     def attach_and_load_script(self):
         #print(self.pid)
-        session = frida.attach(self.pid)
+        self.session = frida.attach(self.pid)
         js_file = open(scriptpath, encoding='utf-8')
         js_code = js_file.read()
         js_file.close()
-        script = session.create_script(js_code)
-        scripterror=False
+        self.script =  self.session.create_script(js_code)
         try:
-            script.load()
-            script.exports_sync.start(processname)
-            script.on('message',on_message)
+            self.script.load()
+            #script.exports_sync.start()
+            self.script.on('message',on_message)
+            if self.spawnmode:
+                frida.resume(self.pid)
+                #转发消息.reloadscript.emit(pickle.dumps(self.script))
         except Exception as e:
             print(f"脚本错误：{str(e)}")
-            script.unload()
-            session.detach()
-            scripterror=True
+            self.script.unload()
+            self.session.detach()
         finally:
             pass
-        return session, script,scripterror
+
 def main():
     global myapp
     myapp=myapplication()
     app = QApplication(sys.argv)
-    window = MyWindow(QWidgetjsonpath,myapp.script)
+    window = MyWindow(QWidgetjsonpath,myapp)
     window.show()
     window.resize(400,300)
+
     try:
         ret_code = app.exec_()
     except KeyboardInterrupt:
